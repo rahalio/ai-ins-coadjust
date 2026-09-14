@@ -1,0 +1,26 @@
+{
+  "name": "coadjust",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=@coadjust/api & npm run dev --workspace=@coadjust/web",
+    "dev:api": "npm run dev --workspace=@coadjust/api",
+    "dev:web": "npm run dev --workspace=@coadjust/web",
+    "build": "npm run build --workspace=@coadjust/shared && npm run build --workspace=@coadjust/api && npm run build --workspace=@coadjust/web",
+    "db:local": "npm run db:local --workspace=@coadjust/api",
+    "db:setup": "npm run db:setup --workspace=@coadjust/api",
+    "db:seed": "npm run db:seed --workspace=@coadjust/api",
+    "db:up": "npm run db:local",
+    "db:up:docker": "docker compose up -d dynamodb",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  }
+}

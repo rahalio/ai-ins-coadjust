@@ -1,0 +1,1488 @@
+openapi: 3.0.3
+info:
+  title: Coadjust
+  version: 0.1.0
+  description: >-
+    Claims-workforce operating system that allocates each claim decision to an
+    adjuster, a model, or a paired review based on measured combined accuracy.
+    Holds the three-mode accuracy baselines, the conduct guardrails that suspend
+    automation on deterioration, and the readiness and redeployment ledger for
+    handlers released from automated queues.
+  x-product-slug: ai-ins-coadjust
+  x-source: ai-in-insurance/Accenture-AI-Future-Workforce-Insurance-Transcript/
+servers:
+  - url: https://api.example.com
+tags:
+  - name: Decisions
+    description: Decision types and decision requests raised from claim events
+  - name: Allocation
+    description: Versioned allocation policy resolving model, human, or paired mode
+  - name: Pairing
+    description: Recommendations, human judgements, overrides, and executions
+  - name: Evidence
+    description: Outcome reconciliation, combination premium baselines, guardrails
+  - name: Workforce
+    description: Readiness, certification, capacity release, and redeployment
+  - name: Governance
+    description: Decision-type register, approvals, and policy reproduction
+paths:
+  /v1/decision-types:
+    get:
+      operationId: listDecisionTypes
+      tags: [Decisions]
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: allocationMode
+          in: query
+          schema:
+            type: string
+            enum: [model_only, human_only, paired, suspended]
+        - name: lineOfBusiness
+          in: query
+          schema:
+            type: string
+            enum: [motor, property, health, liability, travel, pet]
+      responses:
+        "200":
+          description: Decision types page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelopeDecisionType"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: registerDecisionType
+      tags: [Decisions]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecisionTypeCreate"
+      responses:
+        "201":
+          description: Decision type registered in human-only mode pending evidence
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeDecisionType"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/decision-types/{decisionTypeId}:
+    parameters:
+      - $ref: "#/components/parameters/DecisionTypeId"
+    get:
+      operationId: getDecisionType
+      tags: [Decisions]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Decision type with current mode and evidence reference
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeDecisionType"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/decision-requests:
+    get:
+      operationId: listDecisionRequests
+      tags: [Decisions]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: claimReference
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [raised, allocated, awaiting_human, decided, executed, reconciled]
+      responses:
+        "200":
+          description: Decision requests page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelopeDecisionRequest"
+    post:
+      operationId: raiseDecisionRequest
+      tags: [Decisions]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecisionRequestCreate"
+      responses:
+        "201":
+          description: Decision request raised with resolved exclusion flags
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeDecisionRequest"
+        "409":
+          description: Decision request already exists for this claim event
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/decision-requests/{decisionRequestId}/allocation:
+    parameters:
+      - $ref: "#/components/parameters/DecisionRequestId"
+    post:
+      operationId: allocateDecisionRequest
+      tags: [Allocation]
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Allocated mode with governing policy version and rationale
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeAllocation"
+        "409":
+          description: >-
+            Allocation failed closed. Raised when an exclusion flag such as
+            vulnerability, bodily injury, or litigation forbids the requested mode
+            and no eligible human queue has capacity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/allocation-policies:
+    get:
+      operationId: listAllocationPolicies
+      tags: [Allocation]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: decisionTypeId
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+            enum: [draft, awaiting_approval, active, superseded, suspended]
+      responses:
+        "200":
+          description: Allocation policies page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelopeAllocationPolicy"
+    post:
+      operationId: proposeAllocationPolicy
+      tags: [Allocation]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AllocationPolicyCreate"
+      responses:
+        "201":
+          description: Policy version proposed, inactive until approved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeAllocationPolicy"
+        "422":
+          description: >-
+            Rejected because the proposed mode is not supported by the current
+            combination baseline for this decision type.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/allocation-policies/{policyId}/approval:
+    parameters:
+      - $ref: "#/components/parameters/PolicyId"
+    post:
+      operationId: approveAllocationPolicy
+      tags: [Governance]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GovernanceApprovalCreate"
+      responses:
+        "200":
+          description: Policy approved and activated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeAllocationPolicy"
+  /v1/decision-requests/{decisionRequestId}/recommendation:
+    parameters:
+      - $ref: "#/components/parameters/DecisionRequestId"
+    get:
+      operationId: getRecommendation
+      tags: [Pairing]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Model recommendation with confidence, drivers, and comparables
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeRecommendation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/decision-requests/{decisionRequestId}/judgement:
+    parameters:
+      - $ref: "#/components/parameters/DecisionRequestId"
+    post:
+      operationId: recordHumanJudgement
+      tags: [Pairing]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HumanJudgementCreate"
+      responses:
+        "201":
+          description: Human judgement recorded against the named accountable handler
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeHumanJudgement"
+        "422":
+          description: >-
+            Rejected when a declinature, indemnity reduction, or fraud referral is
+            submitted without an accountable handler or without an override reason.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/outcomes:
+    post:
+      operationId: reconcileOutcome
+      tags: [Evidence]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OutcomeCreate"
+      responses:
+        "201":
+          description: Realised outcome bound to the decision for accuracy series
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeOutcome"
+  /v1/evidence/combination-baselines:
+    get:
+      operationId: listCombinationBaselines
+      tags: [Evidence]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: decisionTypeId
+          in: query
+          schema:
+            type: string
+        - name: period
+          in: query
+          schema:
+            type: string
+            example: 2026-Q2
+      responses:
+        "200":
+          description: Three-mode accuracy baselines with combination premium
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelopeCombinationBaseline"
+  /v1/evidence/deference-report:
+    get:
+      operationId: getDeferenceReport
+      tags: [Evidence]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: decisionTypeId
+          in: query
+          schema:
+            type: string
+        - name: period
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Acceptance rate against demonstrated model accuracy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeDeferenceReport"
+  /v1/evidence/guardrail-breaches:
+    get:
+      operationId: listGuardrailBreaches
+      tags: [Evidence]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, suspended, remediated, accepted]
+      responses:
+        "200":
+          description: Cycle-time, complaint, and reversal breaches by decision type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelopeConductGuardrail"
+  /v1/decision-types/{decisionTypeId}/suspension:
+    parameters:
+      - $ref: "#/components/parameters/DecisionTypeId"
+    post:
+      operationId: suspendAutomatedDecisionType
+      tags: [Evidence]
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  enum:
+                    - cycle_time_breach
+                    - complaint_rate_breach
+                    - reversal_rate_breach
+                    - baseline_decay
+                    - governance_direction
+                breachId:
+                  type: string
+      responses:
+        "202":
+          description: Automation suspended, decision type reverts to human-only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeDecisionType"
+  /v1/workforce/readiness-assessments:
+    get:
+      operationId: listReadinessAssessments
+      tags: [Workforce]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: roleProfileId
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+            enum: [not_ready, developing, ready, certified, lapsed]
+      responses:
+        "200":
+          description: Readiness per handler per paired role
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelopeReadinessAssessment"
+    post:
+      operationId: assessHandlerReadiness
+      tags: [Workforce]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReadinessAssessmentCreate"
+      responses:
+        "201":
+          description: Readiness assessed from production decision quality
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeReadinessAssessment"
+  /v1/workforce/redeployments:
+    get:
+      operationId: listRedeployments
+      tags: [Workforce]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [proposed, funded, in_training, placed, lapsed]
+      responses:
+        "200":
+          description: Redeployment ledger page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelopeRedeploymentAssignment"
+    post:
+      operationId: assignRedeployment
+      tags: [Workforce]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RedeploymentAssignmentCreate"
+      responses:
+        "201":
+          description: Redeployment assigned against released capacity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeRedeploymentAssignment"
+        "422":
+          description: >-
+            Rejected when released capacity has no destination role or the
+            capability path has no funded start date.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/workforce/capacity-plans:
+    get:
+      operationId: getQueueCapacityPlan
+      tags: [Workforce]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: period
+          in: query
+          schema:
+            type: string
+        - name: proposedPolicyId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Projected handler demand per queue under a proposed policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeQueueCapacityPlan"
+  /v1/governance/register:
+    get:
+      operationId: getGovernanceRegister
+      tags: [Governance]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Register of decision types, modes, evidence, and approvals
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelopeGovernanceEntry"
+  /v1/governance/policy-reproduction:
+    get:
+      operationId: reproduceDecisionPolicy
+      tags: [Governance]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: decisionRequestId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Policy version, thresholds, and flags in force for a past decision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopePolicyReproduction"
+        "404":
+          $ref: "#/components/responses/NotFound"
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    DecisionTypeId:
+      name: decisionTypeId
+      in: path
+      required: true
+      schema:
+        type: string
+    DecisionRequestId:
+      name: decisionRequestId
+      in: path
+      required: true
+      schema:
+        type: string
+    PolicyId:
+      name: policyId
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    UnprocessableEntity:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+  schemas:
+    ResponseMeta:
+      type: object
+      required: [requestId, timestamp]
+      properties:
+        requestId:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount:
+          type: number
+          format: double
+        currency:
+          type: string
+          example: EUR
+    ExclusionFlag:
+      type: object
+      required: [flag, source]
+      properties:
+        flag:
+          type: string
+          enum:
+            - vulnerable_customer
+            - bodily_injury
+            - fatality
+            - litigation
+            - catastrophe_event
+            - fraud_referral_open
+            - regulatory_hold
+        source:
+          type: string
+          description: System or interaction that set the flag
+        setAt:
+          type: string
+          format: date-time
+    DecisionType:
+      type: object
+      required: [id, name, lineOfBusiness, allocationMode]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          example: Motor glass indemnity approval
+        lineOfBusiness:
+          type: string
+          enum: [motor, property, health, liability, travel, pet]
+        decisionStage:
+          type: string
+          enum:
+            - fnol_triage
+            - coverage_confirmation
+            - damage_assessment
+            - bill_adjudication
+            - indemnity_approval
+            - declinature
+            - fraud_referral
+            - recovery_and_subrogation
+        allocationMode:
+          type: string
+          enum: [model_only, human_only, paired, suspended]
+        humanMandatory:
+          type: boolean
+          description: True where a named human is required regardless of confidence
+        authorityLimit:
+          $ref: "#/components/schemas/Money"
+        activeBaselineId:
+          type: string
+        activePolicyId:
+          type: string
+    DecisionTypeCreate:
+      type: object
+      required: [name, lineOfBusiness, decisionStage]
+      properties:
+        name:
+          type: string
+        lineOfBusiness:
+          type: string
+          enum: [motor, property, health, liability, travel, pet]
+        decisionStage:
+          type: string
+        humanMandatory:
+          type: boolean
+        authorityLimit:
+          $ref: "#/components/schemas/Money"
+    DecisionRequest:
+      type: object
+      required: [id, decisionTypeId, claimReference, status]
+      properties:
+        id:
+          type: string
+        decisionTypeId:
+          type: string
+        claimReference:
+          type: string
+        claimEvent:
+          type: string
+          example: estimate_received
+        status:
+          type: string
+          enum: [raised, allocated, awaiting_human, decided, executed, reconciled]
+        claimedAmount:
+          $ref: "#/components/schemas/Money"
+        exclusionFlags:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExclusionFlag"
+        raisedAt:
+          type: string
+          format: date-time
+        serviceDueAt:
+          type: string
+          format: date-time
+          description: Regulatory or contractual claims-handling deadline
+    DecisionRequestCreate:
+      type: object
+      required: [decisionTypeId, claimReference, claimEvent]
+      properties:
+        decisionTypeId:
+          type: string
+        claimReference:
+          type: string
+        claimEvent:
+          type: string
+        claimedAmount:
+          $ref: "#/components/schemas/Money"
+        exclusionFlags:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExclusionFlag"
+        serviceDueAt:
+          type: string
+          format: date-time
+    Allocation:
+      type: object
+      required: [decisionRequestId, mode, policyId]
+      properties:
+        decisionRequestId:
+          type: string
+        mode:
+          type: string
+          enum: [model_only, human_only, paired]
+        policyId:
+          type: string
+        policyVersion:
+          type: integer
+        rationale:
+          type: string
+          description: Which rule, threshold, or flag produced this mode
+        assignedQueue:
+          type: string
+        accountableHandlerId:
+          type: string
+        allocatedAt:
+          type: string
+          format: date-time
+    AllocationPolicy:
+      type: object
+      required: [id, decisionTypeId, version, state, targetMode]
+      properties:
+        id:
+          type: string
+        decisionTypeId:
+          type: string
+        version:
+          type: integer
+        state:
+          type: string
+          enum: [draft, awaiting_approval, active, superseded, suspended]
+        targetMode:
+          type: string
+          enum: [model_only, human_only, paired]
+        minimumCombinedAccuracy:
+          type: number
+          format: float
+        minimumConfidence:
+          type: number
+          format: float
+        excludedFlags:
+          type: array
+          items:
+            type: string
+        supportingBaselineId:
+          type: string
+        approvedBy:
+          type: string
+        effectiveFrom:
+          type: string
+          format: date-time
+    AllocationPolicyCreate:
+      type: object
+      required: [decisionTypeId, targetMode, supportingBaselineId]
+      properties:
+        decisionTypeId:
+          type: string
+        targetMode:
+          type: string
+          enum: [model_only, human_only, paired]
+        minimumCombinedAccuracy:
+          type: number
+          format: float
+        minimumConfidence:
+          type: number
+          format: float
+        excludedFlags:
+          type: array
+          items:
+            type: string
+        supportingBaselineId:
+          type: string
+    Recommendation:
+      type: object
+      required: [decisionRequestId, modelId, issuedAt]
+      properties:
+        decisionRequestId:
+          type: string
+        modelId:
+          type: string
+        modelVersion:
+          type: string
+        recommendedAction:
+          type: string
+          example: approve_at_estimate
+        recommendedAmount:
+          $ref: "#/components/schemas/Money"
+        confidence:
+          type: number
+          format: float
+        drivers:
+          type: array
+          description: Factors presented to the handler, ordered by contribution
+          items:
+            type: object
+            properties:
+              factor:
+                type: string
+              direction:
+                type: string
+                enum: [increases, decreases]
+              contribution:
+                type: number
+                format: float
+        comparableOutcomes:
+          type: array
+          items:
+            type: object
+            properties:
+              claimReference:
+                type: string
+              settledAmount:
+                $ref: "#/components/schemas/Money"
+        issuedAt:
+          type: string
+          format: date-time
+    HumanJudgement:
+      type: object
+      required: [decisionRequestId, handlerId, disposition]
+      properties:
+        decisionRequestId:
+          type: string
+        handlerId:
+          type: string
+        disposition:
+          type: string
+          enum: [agreed, overridden, escalated, referred_to_siu, declined_cover]
+        decidedAmount:
+          $ref: "#/components/schemas/Money"
+        overrideReason:
+          type: string
+          enum:
+            - evidence_not_in_model
+            - policy_wording_interpretation
+            - claimant_circumstance
+            - suspected_fraud
+            - estimate_quality
+            - reserve_adequacy
+            - other
+        overrideNarrative:
+          type: string
+        timeOnDecisionSeconds:
+          type: integer
+        decidedAt:
+          type: string
+          format: date-time
+    HumanJudgementCreate:
+      type: object
+      required: [handlerId, disposition]
+      properties:
+        handlerId:
+          type: string
+        disposition:
+          type: string
+          enum: [agreed, overridden, escalated, referred_to_siu, declined_cover]
+        decidedAmount:
+          $ref: "#/components/schemas/Money"
+        overrideReason:
+          type: string
+        overrideNarrative:
+          type: string
+        timeOnDecisionSeconds:
+          type: integer
+    Outcome:
+      type: object
+      required: [decisionRequestId, outcomeType]
+      properties:
+        decisionRequestId:
+          type: string
+        outcomeType:
+          type: string
+          enum:
+            - settled
+            - reserve_closed
+            - reopened
+            - complaint_upheld
+            - complaint_rejected
+            - ombudsman_overturned
+            - recovery_received
+            - fraud_confirmed
+            - fraud_not_established
+        settledAmount:
+          $ref: "#/components/schemas/Money"
+        leakageAmount:
+          $ref: "#/components/schemas/Money"
+          description: Difference between decided indemnity and defensible indemnity
+        reserveVariance:
+          $ref: "#/components/schemas/Money"
+        observedAt:
+          type: string
+          format: date-time
+    OutcomeCreate:
+      type: object
+      required: [decisionRequestId, outcomeType, observedAt]
+      properties:
+        decisionRequestId:
+          type: string
+        outcomeType:
+          type: string
+        settledAmount:
+          $ref: "#/components/schemas/Money"
+        leakageAmount:
+          $ref: "#/components/schemas/Money"
+        reserveVariance:
+          $ref: "#/components/schemas/Money"
+        observedAt:
+          type: string
+          format: date-time
+    CombinationBaseline:
+      type: object
+      required: [id, decisionTypeId, period]
+      properties:
+        id:
+          type: string
+        decisionTypeId:
+          type: string
+        period:
+          type: string
+        populationSize:
+          type: integer
+        modelOnlyAccuracy:
+          type: number
+          format: float
+        humanOnlyAccuracy:
+          type: number
+          format: float
+        pairedAccuracy:
+          type: number
+          format: float
+        combinationPremium:
+          type: number
+          format: float
+          description: Paired accuracy less the better of the two solo modes
+        leakagePerDecision:
+          $ref: "#/components/schemas/Money"
+        populationDefinition:
+          type: string
+        decayFlag:
+          type: boolean
+          description: True where premium has fallen for two consecutive periods
+    DeferenceReport:
+      type: object
+      properties:
+        decisionTypeId:
+          type: string
+        period:
+          type: string
+        acceptanceRate:
+          type: number
+          format: float
+        demonstratedModelAccuracy:
+          type: number
+          format: float
+        divergence:
+          type: number
+          format: float
+        overrideUpheldRate:
+          type: number
+          format: float
+        interpretation:
+          type: string
+          enum: [calibrated, over_deference, under_deference, insufficient_volume]
+    ConductGuardrail:
+      type: object
+      required: [id, decisionTypeId, metric, status]
+      properties:
+        id:
+          type: string
+        decisionTypeId:
+          type: string
+        metric:
+          type: string
+          enum:
+            - cycle_time
+            - complaint_rate
+            - reversal_rate
+            - ombudsman_overturn_rate
+            - reopen_rate
+        threshold:
+          type: number
+          format: float
+        observedValue:
+          type: number
+          format: float
+        status:
+          type: string
+          enum: [open, suspended, remediated, accepted]
+        breachedAt:
+          type: string
+          format: date-time
+        suspendedAt:
+          type: string
+          format: date-time
+    RoleProfile:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          example: Bodily injury paired reviewer
+        pairedDecisionTypes:
+          type: array
+          items:
+            type: string
+        requiredCapabilities:
+          type: array
+          items:
+            type: string
+    ReadinessAssessment:
+      type: object
+      required: [id, handlerId, roleProfileId, state]
+      properties:
+        id:
+          type: string
+        handlerId:
+          type: string
+        roleProfileId:
+          type: string
+        state:
+          type: string
+          enum: [not_ready, developing, ready, certified, lapsed]
+        productionDecisionCount:
+          type: integer
+        productionAccuracy:
+          type: number
+          format: float
+        overrideUpheldRate:
+          type: number
+          format: float
+        capabilityPathId:
+          type: string
+        assessedAt:
+          type: string
+          format: date-time
+    ReadinessAssessmentCreate:
+      type: object
+      required: [handlerId, roleProfileId]
+      properties:
+        handlerId:
+          type: string
+        roleProfileId:
+          type: string
+        capabilityPathId:
+          type: string
+    RedeploymentAssignment:
+      type: object
+      required: [id, handlerId, status]
+      properties:
+        id:
+          type: string
+        handlerId:
+          type: string
+        releasedFromDecisionTypeId:
+          type: string
+        destinationRoleProfileId:
+          type: string
+        destinationQueue:
+          type: string
+        capabilityPathId:
+          type: string
+        fundedStartDate:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [proposed, funded, in_training, placed, lapsed]
+        releasedCapacityHours:
+          type: number
+          format: float
+        reskillingCost:
+          $ref: "#/components/schemas/Money"
+        placedAt:
+          type: string
+          format: date-time
+    RedeploymentAssignmentCreate:
+      type: object
+      required: [handlerId, releasedFromDecisionTypeId, destinationRoleProfileId]
+      properties:
+        handlerId:
+          type: string
+        releasedFromDecisionTypeId:
+          type: string
+        destinationRoleProfileId:
+          type: string
+        destinationQueue:
+          type: string
+        capabilityPathId:
+          type: string
+        fundedStartDate:
+          type: string
+          format: date
+        releasedCapacityHours:
+          type: number
+          format: float
+        reskillingCost:
+          $ref: "#/components/schemas/Money"
+    QueueCapacityPlan:
+      type: object
+      properties:
+        period:
+          type: string
+        proposedPolicyId:
+          type: string
+        queues:
+          type: array
+          items:
+            type: object
+            properties:
+              queue:
+                type: string
+              projectedVolume:
+                type: integer
+              requiredHandlers:
+                type: number
+                format: float
+              certifiedHandlers:
+                type: integer
+              shortfall:
+                type: number
+                format: float
+        releasedCapacityHours:
+          type: number
+          format: float
+        unassignedCapacityHours:
+          type: number
+          format: float
+    GovernanceEntry:
+      type: object
+      properties:
+        decisionTypeId:
+          type: string
+        decisionTypeName:
+          type: string
+        allocationMode:
+          type: string
+        activePolicyVersion:
+          type: integer
+        combinationPremium:
+          type: number
+          format: float
+        lastApprovedBy:
+          type: string
+        lastApprovedAt:
+          type: string
+          format: date-time
+        openGuardrailBreaches:
+          type: integer
+    GovernanceApprovalCreate:
+      type: object
+      required: [approverId, forum, rationale]
+      properties:
+        approverId:
+          type: string
+        forum:
+          type: string
+          enum:
+            - model_governance_committee
+            - claims_executive
+            - conduct_committee
+        rationale:
+          type: string
+        conditions:
+          type: array
+          items:
+            type: string
+    PolicyReproduction:
+      type: object
+      properties:
+        decisionRequestId:
+          type: string
+        policyId:
+          type: string
+        policyVersion:
+          type: integer
+        modeApplied:
+          type: string
+        thresholdsInForce:
+          type: object
+          additionalProperties:
+            type: number
+            format: float
+        exclusionFlagsAtDecision:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExclusionFlag"
+        accountableHandlerId:
+          type: string
+        baselineAtDecision:
+          $ref: "#/components/schemas/CombinationBaseline"
+    DataEnvelopeDecisionType:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/DecisionType"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeDecisionRequest:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/DecisionRequest"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeAllocation:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/Allocation"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeAllocationPolicy:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/AllocationPolicy"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeRecommendation:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/Recommendation"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeHumanJudgement:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/HumanJudgement"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeOutcome:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/Outcome"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeDeferenceReport:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/DeferenceReport"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeReadinessAssessment:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/ReadinessAssessment"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeRedeploymentAssignment:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/RedeploymentAssignment"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeQueueCapacityPlan:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/QueueCapacityPlan"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopePolicyReproduction:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/PolicyReproduction"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    ListEnvelopeDecisionType:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/DecisionType"
+            nextCursor:
+              type: string
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    ListEnvelopeDecisionRequest:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/DecisionRequest"
+            nextCursor:
+              type: string
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    ListEnvelopeAllocationPolicy:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/AllocationPolicy"
+            nextCursor:
+              type: string
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    ListEnvelopeCombinationBaseline:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/CombinationBaseline"
+            nextCursor:
+              type: string
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    ListEnvelopeConductGuardrail:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/ConductGuardrail"
+            nextCursor:
+              type: string
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    ListEnvelopeReadinessAssessment:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/ReadinessAssessment"
+            nextCursor:
+              type: string
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    ListEnvelopeRedeploymentAssignment:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/RedeploymentAssignment"
+            nextCursor:
+              type: string
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    ListEnvelopeGovernanceEntry:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/GovernanceEntry"
+            nextCursor:
+              type: string
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"

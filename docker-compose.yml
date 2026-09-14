@@ -1,0 +1,8 @@
+services:
+  dynamodb:
+    image: amazon/dynamodb-local:2.5.2
+    container_name: coadjust-dynamodb
+    ports:
+      - "8000:8000"
+    command: "-jar DynamoDBLocal.jar -sharedDb -inMemory"
+    working_dir: /home/dynamodblocal
