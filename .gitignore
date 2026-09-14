@@ -7,3 +7,10 @@ dist/
 .DS_Store
 coverage/
 .turbo/
+
+# Codegen — do not push
+.codegen/
+codegen/
+**/zero_codegen/
+**/integration-events/generated/
+platform/tests/postman/generated/
